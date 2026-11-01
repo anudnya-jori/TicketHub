@@ -1,0 +1,79 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: event-show-service
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/eventshow_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:anudnya}
+  jpa:
+    open-in-view: false            # no lazy loading from controllers; services own the transaction
+    hibernate:
+      ddl-auto: validate           # Flyway owns the schema; Hibernate only checks it matches
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 3MB           # hard stop at the web layer; the service enforces the real 2 MB poster limit
+      max-request-size: 3MB
+
+clients:
+  booking:
+    base-url: http://booking-service        # a service NAME, resolved through Eureka
+    connect-timeout-ms: 1000
+    read-timeout-ms: 3000
+
+eureka:
+  instance:
+    instance-id: ${spring.application.name}:${server.port}
+
+management:
+  tracing:
+    sampling:
+      probability: 0.0     # tracing OFF unless profile "observability" turns it on
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+
+logging:
+  level:
+    com.tickethub: INFO
+
+# Security (ST-14/15/59). false = open (local dev only). The "secure" profile in the Config Server turns it on.
+security:
+  enabled: false
+internal:
+  api-key: ${INTERNAL_API_KEY:dev-internal-key-change-me}   # shared secret for /internal/** (set a real one outside dev)
+
+resilience:           # local fallbacks; the Config Server's application.yml overrides these
+  retry:
+    max-attempts: 3
+    wait-ms: 200
+  circuit-breaker:
+    sliding-window-size: 10
+    minimum-calls: 5
+    failure-rate-threshold: 50
+    wait-open-ms: 10000
+
+# Poster/media storage (ST-30). Private S3 bucket. Credentials are NOT here: the AWS default provider chain reads
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (local: LocalStack dummy values) or an IAM role (real AWS).
+media:
+  max-poster-bytes: 2097152        # 2 MB
+  s3:
+    bucket: ${S3_BUCKET:tickethub-media}
+    region: ${AWS_REGION:us-east-1}
+    endpoint: ${S3_ENDPOINT:http://localhost:4566}   # LocalStack; set S3_ENDPOINT to empty for real AWS
+    path-style: true
+    create-bucket-on-start: ${S3_CREATE_BUCKET:true}  # dev convenience; in real AWS the bucket is created by infra

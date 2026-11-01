@@ -1,0 +1,109 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: booking-service
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/booking_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:anudnya}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate           # Flyway owns the schema
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  kafka:
+    template:
+      observation-enabled: true     # trace context travels inside Kafka messages
+    listener:
+      observation-enabled: true
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: booking-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        # a Kafka outage must not hang the relay: it gives up quickly and the outbox row waits for the next run
+        max.block.ms: 3000
+        request.timeout.ms: 3000
+        delivery.timeout.ms: 5000
+
+# Local fallbacks. When the Config Server is running, booking-service.yml there overrides these.
+booking:
+  reservation-minutes: 10          # how long an unpaid booking holds its seats
+  max-seats-per-booking: 10
+  events:
+    topic: booking.confirmed         # Booking -> Notification (BookingConfirmed), key = bookingId
+    partitions: 3
+  lifecycle-events:
+    topic: booking.events            # Booking -> Payment (BookingRejected, BookingCancelled), key = bookingId
+  payment-events:
+    topic: payment.events            # Payment -> Booking (PaymentSucceeded, PaymentFailed, PaymentRefunded)
+    group-id: booking-service
+  outbox:
+    enabled: true                    # the relay that publishes outbox rows to Kafka (Scenario 3)
+    relay-interval-ms: 1000
+    send-timeout-ms: 5000
+  retry:                             # consumer retries before a message is dead-lettered (Scenario 1)
+    max-retries: 3
+    initial-interval-ms: 1000
+    multiplier: 2.0
+    max-interval-ms: 10000
+  expiry:
+    enabled: true
+    scan-interval-ms: 30000
+
+clients:
+  event-show:
+    base-url: http://event-show-service     # a service NAME, resolved through Eureka
+    connect-timeout-ms: 1000
+    read-timeout-ms: 3000
+
+eureka:
+  instance:
+    instance-id: ${spring.application.name}:${server.port}
+
+management:
+  tracing:
+    sampling:
+      probability: 0.0     # tracing OFF unless profile "observability" turns it on
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+
+logging:
+  level:
+    com.tickethub: INFO
+
+# Security (ST-14/15/59). false = open (local dev only). The "secure" profile in the Config Server turns it on.
+security:
+  enabled: false
+internal:
+  api-key: ${INTERNAL_API_KEY:dev-internal-key-change-me}   # shared secret for /internal/** (set a real one outside dev)
+
+resilience:           # local fallbacks; the Config Server's application.yml overrides these
+  retry:
+    max-attempts: 3
+    wait-ms: 200
+  circuit-breaker:
+    sliding-window-size: 10
+    minimum-calls: 5
+    failure-rate-threshold: 50
+    wait-open-ms: 10000

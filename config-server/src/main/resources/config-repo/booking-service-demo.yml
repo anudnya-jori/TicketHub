@@ -1,0 +1,5 @@
+# Run Booking with profile "demo" (SPRING_PROFILES_ACTIVE=demo) to watch expiry happen quickly.
+booking:
+  reservation-minutes: 1
+  expiry:
+    scan-interval-ms: 5000

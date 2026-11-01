@@ -1,0 +1,14 @@
+# Notification Service configuration.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/notification_db
+    username: postgres
+#    password: anudnya
+
+
+  kafka:
+    bootstrap-servers: localhost:9092
+
+notification:
+  topic: booking.confirmed
+  sender: logging              # logging | smtp (smtp -> Mailpit on localhost:1025)

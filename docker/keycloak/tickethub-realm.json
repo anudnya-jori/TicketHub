@@ -1,0 +1,124 @@
+{
+  "realm": "tickethub",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 10000,
+  "ssoSessionIdleTimeout": 18000,
+  "roles": {
+    "realm": [
+      {
+        "name": "CUSTOMER",
+        "description": "Books tickets"
+      },
+      {
+        "name": "ADMIN",
+        "description": "Manages the catalogue"
+      }
+    ]
+  },
+  "defaultRoles": [
+    "CUSTOMER"
+  ],
+  "clients": [
+    {
+      "clientId": "tickethub-api",
+      "name": "TicketHub demo client",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "basic",
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email",
+        "phone"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ],
+      "attributes": {
+        "phoneNumber": [
+          "+919999900001"
+        ]
+      }
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@example.com",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "bob123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ],
+      "attributes": {
+        "phoneNumber": [
+          "+919999900002"
+        ]
+      }
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@example.com",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN"
+      ],
+      "attributes": {
+        "phoneNumber": [
+          "+919999900003"
+        ]
+      }
+    }
+  ],
+  "attributes": {
+    "unmanagedAttributePolicy": "ENABLED"
+  }
+}

@@ -1,0 +1,28 @@
+# Ships every TicketHub container's JSON logs to Elasticsearch (ST-26). Search in Kibana by bookingId / correlationId.
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      templates:
+        - condition:
+            regexp:
+              docker.container.name: ".*(event-show|booking|payment|notification)-service.*|.*api-gateway.*"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              processors:
+                - decode_json_fields:
+                    fields: ["message"]
+                    target: ""
+                    overwrite_keys: true
+                    add_error_key: false
+processors:
+  - drop_fields:
+      fields: ["agent", "ecs", "input", "host"]
+      ignore_missing: true
+setup.ilm.enabled: false
+setup.template.enabled: false
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  index: "tickethub-logs-%{+yyyy.MM.dd}"
+logging.level: warning

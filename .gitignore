@@ -1,0 +1,16 @@
+target/
+.idea/
+*.iml
+.vscode/
+*.log
+.env
+*.zip
+.last-release-pending
+.current-release
+.previous-release
+.env.example
+.GUIDE.md
+.kc.txt
+.env
+target/
+*.zip

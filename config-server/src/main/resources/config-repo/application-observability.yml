@@ -1,0 +1,8 @@
+# Profile "observability": distributed tracing ON (ST-28). Spans go to Jaeger (OTLP/HTTP on 4318).
+management:
+  tracing:
+    sampling:
+      probability: 1.0        # trace EVERY request (fine for a demo; use ~0.1 in real life)
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces

@@ -1,0 +1,8 @@
+# Applies to every service when it runs with the "integration" profile.
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+logging:
+  level:
+    com.tickethub: DEBUG

@@ -1,0 +1,82 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: notification-service
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/notification_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:anudnya}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  kafka:
+    listener:
+      observation-enabled: true     # continue the producer's trace
+    producer:                        # used by the dead-letter publisher
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${notification.group-id:notification-service}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}          # Mailpit SMTP
+
+notification:
+  topic: booking.confirmed           # dead-lettered messages go to booking.confirmed.DLT
+  topic-partitions: 3
+  group-id: ${NOTIFICATION_GROUP_ID:notification-service}   # Scenario 12: a NEW group id replays history from the earliest offset
+  replay-mode: ${NOTIFICATION_REPLAY_MODE:false}              # true = rebuild records, send NO email
+  simulated-delay-ms: ${NOTIFICATION_DELAY_MS:0}              # Scenario 11: slow the consumer on purpose
+  provider:                                                   # Scenario 10: protection around the email provider
+    max-per-second: 50
+    breaker: {window: 10, min-calls: 5, open-ms: 10000}
+  retry:                             # Scenario 1: bounded retries with growing delay, then the dead-letter topic
+    max-retries: 3
+    initial-interval-ms: 1000
+    multiplier: 2.0
+    max-interval-ms: 10000
+    topic-attempts: 4              # 1 normal + 3 delayed retries on booking.confirmed-retry-N
+    topic-delay-ms: 5000
+  sender: logging                    # logging | smtp   (smtp sends to Mailpit; UI at http://localhost:8025)
+  from: no-reply@tickethub.local
+
+eureka:
+  instance:
+    instance-id: ${spring.application.name}:${server.port}
+
+management:
+  tracing:
+    sampling:
+      probability: 0.0     # tracing OFF unless profile "observability" turns it on
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+
+logging:
+  level:
+    com.tickethub: INFO
+
+security:
+  enabled: false                     # true = /internal/** needs the service key (profile "secure")
+internal:
+  api-key: ${INTERNAL_API_KEY:dev-internal-key-change-me}

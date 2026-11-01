@@ -1,0 +1,24 @@
+# Applies to every service when it runs inside docker compose (profile "docker"): container host names, not localhost.
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+spring:
+  kafka:
+    bootstrap-servers: kafka:29092
+  mail:
+    host: mailpit
+    port: 1025
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://keycloak:8080/realms/tickethub/protocol/openid-connect/certs
+management:
+  otlp:
+    tracing:
+      endpoint: http://jaeger:4318/v1/traces
+logging:
+  structured:
+    format:
+      console: ecs            # JSON logs (one object per line) so Filebeat/Elasticsearch can index every field (ST-27)

@@ -1,0 +1,51 @@
+server:
+  port: 8080
+
+spring:
+  reactor:
+    context-propagation: auto     # keeps trace/correlation context across reactive threads
+  application:
+    name: api-gateway
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 20000      # ms to connect to a service
+            response-timeout: 10s      # max wait for a service response
+          routes:
+            # ONLY these public paths are routed. /internal/** is deliberately NOT routed,
+            # so service-to-service endpoints cannot be reached from outside (ST-12).
+            - id: event-show-service
+              uri: lb://event-show-service
+              predicates:
+                - Path=/events/**,/venues/**,/shows/**
+            - id: booking-service
+              uri: lb://booking-service
+              predicates:
+                - Path=/bookings/**
+            - id: payment-service
+              uri: lb://payment-service
+              predicates:
+                - Path=/payments/**
+
+eureka:
+  instance:
+    instance-id: ${spring.application.name}:${server.port}
+
+management:
+  tracing:
+    sampling:
+      probability: 0.0     # tracing OFF unless profile "observability" turns it on
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,gateway
+
+security:
+  enabled: false     # true (profile "secure") = every request needs a valid Keycloak JWT

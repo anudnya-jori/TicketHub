@@ -1,0 +1,20 @@
+# Payment Service configuration.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payment_db
+    username: postgres
+#    password: anudnya
+
+
+payment:
+  provider-timeout-ms: 15000
+  simulation:
+    default-outcome: SUCCESS
+    allow-overrides: true      # DEV ONLY: lets X-Simulate-Outcome / X-Simulate-Delay-Ms force FAILED / timeout
+# The webhook secret is NOT stored here. Provide env var PAYMENT_WEBHOOK_SECRET.
+
+clients:
+  booking:
+    base-url: http://booking-service
+    connect-timeout-ms: 1000
+    read-timeout-ms: 3000

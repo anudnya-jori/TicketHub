@@ -1,0 +1,118 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: payment-service
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/payment_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:anudnya}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
+    consumer:
+      group-id: payment-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        max.block.ms: 3000
+        request.timeout.ms: 3000
+        delivery.timeout.ms: 5000
+
+payment:
+  reconciliation:
+    enabled: true
+    interval-ms: 60000
+    pending-after-seconds: 30
+  events:
+    topic: payment.events            # Payment -> Booking (PaymentSucceeded, PaymentFailed, PaymentRefunded), key = bookingId
+    partitions: 3
+  booking-events:
+    topic: booking.events            # Booking -> Payment (BookingRejected, BookingCancelled)
+    group-id: payment-service
+  outbox:
+    enabled: true                    # the relay that publishes outbox rows to Kafka (Scenario 3)
+    relay-interval-ms: 1000
+    send-timeout-ms: 5000
+  retry:                             # consumer retries before a message is dead-lettered (Scenario 1)
+    max-retries: 3
+    initial-interval-ms: 1000
+    multiplier: 2.0
+    max-interval-ms: 10000
+  provider: ${PAYMENT_PROVIDER:razorpay}          # simulated | razorpay
+  razorpay:
+    key-id: ${RAZORPAY_KEY_ID:}
+    key-secret: ${RAZORPAY_KEY_SECRET:}
+    base-url: https://api.razorpay.com
+  provider-timeout-ms: ${PROVIDER_TIMEOUT_MS:15000}
+  # a slow provider must never hang the request
+  webhook:
+    # DEV default only. Real deployments set PAYMENT_WEBHOOK_SECRET (never commit a real secret).
+    secret: ${PAYMENT_WEBHOOK_SECRET:dev-only-webhook-secret}
+  simulation:
+    default-outcome: SUCCESS         # SUCCESS | FAILED
+    allow-overrides: true            # lets X-Simulate-Outcome / X-Simulate-Delay-Ms work (DEV ONLY)
+
+clients:
+  booking:
+    base-url: http://booking-service
+    connect-timeout-ms: 1000
+    read-timeout-ms: 3000
+
+eureka:
+  instance:
+    instance-id: ${spring.application.name}:${server.port}
+
+management:
+  tracing:
+    sampling:
+      probability: 0.0     # tracing OFF unless profile "observability" turns it on
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+
+logging:
+  level:
+    com.tickethub: INFO
+
+# Security (ST-14/15/59). false = open (local dev only). The "secure" profile in the Config Server turns it on.
+security:
+  enabled: false
+internal:
+  api-key: ${INTERNAL_API_KEY:dev-internal-key-change-me}   # shared secret for /internal/** (set a real one outside dev)
+
+resilience:           # local fallbacks; the Config Server's application.yml overrides these
+  retry:
+    max-attempts: 3
+    wait-ms: 200
+  circuit-breaker:
+    sliding-window-size: 10
+    minimum-calls: 5
+    failure-rate-threshold: 50
+    wait-open-ms: 10000

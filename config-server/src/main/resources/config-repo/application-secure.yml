@@ -1,0 +1,10 @@
+# Profile "secure": turns on JWT authentication (Keycloak) and the internal service key for a service.
+# Run a service with SPRING_PROFILES_ACTIVE=secure. (The internal key itself is NOT here: env INTERNAL_API_KEY.)
+security:
+  enabled: true
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8180/realms/tickethub/protocol/openid-connect/certs

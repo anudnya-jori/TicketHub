@@ -1,0 +1,40 @@
+# Shared by EVERY service (file name "application" = applies to all clients).
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics   # prometheus = what Prometheus scrapes (ST-26)
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true       # needed for P95 latency panels in Grafana
+    tags:
+      application: ${spring.application.name}      # label every metric with the service name
+  tracing:
+    sampling:
+      probability: 0.0                             # profile "observability" switches tracing on
+
+logging:
+  level:
+    com.tickethub: INFO
+  pattern:
+    # every log line shows which request (correlationId) and trace it belongs to (ST-25)
+    level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-}]"
+
+# Fault tolerance defaults for calls between services (ST-16/17/18). Read by services that call other services.
+resilience:
+  retry:
+    max-attempts: 3          # total tries for a safe read (1 call + 2 retries)
+    wait-ms: 200
+  circuit-breaker:
+    sliding-window-size: 10  # look at the last 10 calls
+    minimum-calls: 5         # do not judge before 5 calls
+    failure-rate-threshold: 50   # open when >= 50% of them failed
+    wait-open-ms: 10000      # stay open 10 s, then allow trial calls (half-open)

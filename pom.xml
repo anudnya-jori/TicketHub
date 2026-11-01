@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.15</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.tickethub</groupId>
+    <artifactId>tickethub-parent</artifactId>
+    <version>0.1.0</version>
+    <packaging>pom</packaging>
+    <name>TicketHub (parent)</name>
+    <description>TicketHub v1: four independent Spring Boot services, one database each</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <springdoc.version>2.8.9</springdoc.version>
+        <resilience4j.version>2.3.0</resilience4j.version>
+        <aws-sdk.version>2.29.52</aws-sdk.version>
+        <spring-cloud.version>2025.0.3</spring-cloud.version>
+    </properties>
+
+    <modules>
+        <module>eureka-server</module>
+        <module>config-server</module>
+        <module>api-gateway</module>
+        <module>event-show-service</module>
+        <module>booking-service</module>
+        <module>payment-service</module>
+        <module>notification-service</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-circuitbreaker</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-retry</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

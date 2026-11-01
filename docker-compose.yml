@@ -1,0 +1,292 @@
+# TicketHub local stack.
+#   Infrastructure only (run the services from your IDE / mvn):   docker compose up -d
+#   Everything in containers:                                      docker compose --profile apps up -d --build
+# Copy .env.example to .env first (passwords/secrets come from there, not from the repo).
+x-svc-env: &svc-env
+  SPRING_PROFILES_ACTIVE: ${APP_PROFILES:-secure,docker}   # add ,observability to switch tracing on
+  INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key-change-me}
+  CONFIG_SERVER_URL: http://config-server:8888
+  DB_PASSWORD: ${DB_PASSWORD:-anudnya}
+
+x-svc-deps: &svc-deps
+  postgres: {condition: service_healthy}
+  kafka: {condition: service_healthy}
+  config-server: {condition: service_healthy}
+  eureka-server: {condition: service_healthy}
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: tickethub-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-anudnya}
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"       # 5433 on your machine so it does not clash with a local PostgreSQL on 5432
+    volumes:
+      - ./docker/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+      - tickethub-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.9.0          # single-node KRaft (no ZooKeeper)
+    container_name: tickethub-kafka
+    ports:
+      - "9092:9092"                     # for services running on your machine
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: HOST://:9092,INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: HOST:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  keycloak:                             # login server: users alice/bob (CUSTOMER), admin (ADMIN). DEV realm import.
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: tickethub-keycloak
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8180:8080"                     # http://localhost:8180 (admin console)
+    volumes:
+      - ./docker/keycloak:/opt/keycloak/data/import:ro
+
+  mailpit:                              # fake SMTP server + web inbox
+    image: axllent/mailpit:latest
+    container_name: tickethub-mailpit
+    ports:
+      - "1025:1025"                     # SMTP
+      - "8025:8025"                     # inbox UI: http://localhost:8025
+
+  kafka-ui:                             # Phase 2 / Scenario 0: SEE inside Kafka. http://localhost:8090
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: tickethub-kafka-ui
+    environment:
+      KAFKA_CLUSTERS_0_NAME: tickethub
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "false"
+    ports:
+      - "8090:8080"                     # 8080 is the API gateway
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  localstack:                           # fake AWS (S3) for event posters - no AWS account needed locally
+    image: localstack/localstack:3.8
+    container_name: tickethub-localstack
+    environment:
+      SERVICES: s3
+    ports:
+      - "4566:4566"
+
+  # ---------------------------------------------------------------- observability (profile "observability")
+  jaeger:                               # traces UI: http://localhost:16686  (OTLP/HTTP on 4318)
+    profiles: [observability]
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: tickethub-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+
+  kafka-exporter:                       # Scenario 11: consumer-group lag as Prometheus metrics
+    profiles: [observability]
+    image: danielqsj/kafka-exporter:v1.8.0
+    container_name: tickethub-kafka-exporter
+    command: ["--kafka.server=kafka:29092"]
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  prometheus:                           # http://localhost:9090
+    profiles: [observability]
+    image: prom/prometheus:v2.55.1
+    container_name: tickethub-prometheus
+    volumes:
+      - ./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:                              # http://localhost:3000  (dashboard: TicketHub / booking flow)
+    profiles: [observability]
+    image: grafana/grafana:11.3.1
+    container_name: tickethub-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./docker/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus]
+
+  elasticsearch:
+    profiles: [observability]
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: tickethub-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"      # LOCAL DEV ONLY
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - tickethub-esdata:/usr/share/elasticsearch/data
+
+  kibana:                               # http://localhost:5601 (run scripts/kibana-setup.sh once)
+    profiles: [observability]
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    container_name: tickethub-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on: [elasticsearch]
+
+  filebeat:                             # ships container logs -> Elasticsearch
+    profiles: [observability]
+    image: docker.elastic.co/beats/filebeat:8.15.3
+    container_name: tickethub-filebeat
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    volumes:
+      - ./docker/observability/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [elasticsearch]
+
+  # ---------------------------------------------------------------- application services (profile "apps")
+  eureka-server:
+    profiles: [apps]
+    build: {context: ., args: {MODULE: eureka-server}}
+    ports: ["8761:8761"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8761'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  config-server:
+    profiles: [apps]
+    build: {context: ., args: {MODULE: config-server}}
+    ports: ["8888:8888"]
+    environment:
+      SPRING_PROFILES_ACTIVE: native
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8888'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  event-show-service:
+    profiles: [apps]
+    build: {context: ., args: {MODULE: event-show-service}}
+    ports: ["8081:8081"]
+    environment:
+      <<: *svc-env
+      S3_ENDPOINT: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test            # LocalStack dummy values, not real credentials
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+    depends_on:
+      <<: *svc-deps
+      localstack: {condition: service_started}
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8081'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  booking-service:
+    profiles: [apps]
+    build: {context: ., args: {MODULE: booking-service}}
+    ports: ["8082:8082"]
+    environment:
+      <<: *svc-env
+    depends_on:
+      <<: *svc-deps
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8082'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  payment-service:
+    profiles: [apps]
+    build: {context: ., args: {MODULE: payment-service}}
+    ports: ["8083:8083"]
+    environment:
+      <<: *svc-env
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-change-me-locally}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-simulated}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      PROVIDER_TIMEOUT_MS: ${PROVIDER_TIMEOUT_MS:-15000}
+    depends_on:
+      <<: *svc-deps
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8083'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  notification-service:
+    profiles: [apps]
+    build: {context: ., args: {MODULE: notification-service}}
+    ports: ["8084:8084"]
+    environment:
+      <<: *svc-env
+      NOTIFICATION_SENDER: smtp          # emails appear in Mailpit: http://localhost:8025
+    depends_on:
+      <<: *svc-deps
+      mailpit: {condition: service_started}
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8084'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  api-gateway:
+    profiles: [apps]
+    build: {context: ., args: {MODULE: api-gateway}}
+    ports: ["8080:8080"]
+    environment:
+      <<: *svc-env
+    depends_on:
+      <<: *svc-deps
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8080'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+volumes:
+  tickethub-pgdata:
+  tickethub-esdata:

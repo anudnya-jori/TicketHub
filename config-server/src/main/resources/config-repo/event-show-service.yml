@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/eventshow_db
+    username: postgres
+#    password: anudnya
+
+
+clients:
+  booking:
+    base-url: http://booking-service      # a service NAME resolved through Eureka, not host:port
+    connect-timeout-ms: 1000
+    read-timeout-ms: 3000

@@ -1,0 +1,24 @@
+server:
+  port: 8761
+
+spring:
+  application:
+    name: eureka-server
+
+eureka:
+  instance:
+    hostname: localhost
+  client:
+    # This IS the registry: it must not register with itself or fetch from anyone else.
+    register-with-eureka: false
+    fetch-registry: false
+  server:
+    # Dev convenience: remove stopped instances quickly so the registry reflects reality.
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 5000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
